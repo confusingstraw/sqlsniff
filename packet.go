@@ -6,11 +6,10 @@ import (
 	"encoding/binary"
 	"errors"
 	"io"
-	"io/ioutil"
 )
 
 // implements the conditional size described in the packet docs
-func getPluginPart2DataLen(v uint8) int64 {
+func getPluginPart2DataLen(v uint8) int {
 	if v == 0 {
 		return 0
 	}
@@ -19,7 +18,7 @@ func getPluginPart2DataLen(v uint8) int64 {
 		return MAX_AUTH_PLUGIN_LEN
 	}
 
-	return int64(v - 8)
+	return int(v - 8)
 }
 
 // implements reading the packet header for a MySQL connection
@@ -81,37 +80,37 @@ func ParseDescriptor(p []byte, n int) (*ServerDescriptor, error) {
 
 	// ingest connection id
 	b := make([]byte, CONNECTION_ID_SIZE)
-	_, err = io.ReadFull(r, b)
-	if err != nil {
+	if _, err = io.ReadFull(r, b); err != nil {
 		return nil, err
 	}
 	d.ConnectionId = binary.LittleEndian.Uint32(b)
 
 	// skip unused values
-	io.CopyN(ioutil.Discard, r, AUTH_PLUGIN_DATA_PART_1_SIZE+FILLER_1_SIZE)
+	if _, err = r.Discard(AUTH_PLUGIN_DATA_PART_1_SIZE + FILLER_1_SIZE); err != nil {
+		return nil, err
+	}
 
 	// ingest lower capability flag bytes
 	capabilities_lo := make([]byte, CAPABILITY_FLAGS_1_SIZE)
-	_, err = io.ReadFull(r, capabilities_lo)
-	if err != nil {
+	if _, err = io.ReadFull(r, capabilities_lo); err != nil {
 		return nil, err
 	}
 
 	// skip unused value
-	io.CopyN(ioutil.Discard, r, CHARACTER_SET_SIZE)
+	if _, err = r.Discard(CHARACTER_SET_SIZE); err != nil {
+		return nil, err
+	}
 
 	// ingest lower capability flag bytes
 	b = make([]byte, STATUS_FLAGS_SIZE)
-	_, err = io.ReadFull(r, b)
-	if err != nil {
+	if _, err = io.ReadFull(r, b); err != nil {
 		return nil, err
 	}
 	d.Status = binary.LittleEndian.Uint16(b)
 
 	// ingest upper capability flag bytes
 	capabilities_hi := make([]byte, CAPABILITY_FLAGS_2_SIZE)
-	_, err = io.ReadFull(r, capabilities_hi)
-	if err != nil {
+	if _, err = io.ReadFull(r, capabilities_hi); err != nil {
 		return nil, err
 	}
 	d.Capabilities = binary.LittleEndian.Uint32(append(capabilities_lo, capabilities_hi...))
@@ -121,7 +120,11 @@ func ParseDescriptor(p []byte, n int) (*ServerDescriptor, error) {
 	if err != nil {
 		return nil, err
 	}
-	io.CopyN(ioutil.Discard, r, getPluginPart2DataLen(uint8(u))+AUTH_PLUGIN_DATA_RESERVED_PADDING_SIZE)
+
+	_, err = r.Discard(getPluginPart2DataLen(uint8(u)) + AUTH_PLUGIN_DATA_RESERVED_PADDING_SIZE)
+	if err != nil {
+		return nil, err
+	}
 
 	// only if the plugin auth capability is supported
 	if u != 0 {
